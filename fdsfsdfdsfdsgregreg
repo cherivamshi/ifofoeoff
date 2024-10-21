@@ -1,0 +1,148 @@
+import React, { useState } from "react";
+import axios, { AxiosRequestConfig } from "axios";
+import {
+  WppTypography,
+  WppCheckbox,
+  WppFileUpload,
+} from "@platform-ui-kit/components-library-react";
+import { AppConfig } from "./../../../AppConfig";
+import { useCookies } from 'react-cookie';
+
+type Props = {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  title: string;
+  links: { label: string, link: string, context: string }[];
+  checkboxText: string;
+};
+
+export const UploadFilesStep = (props: Props) => {
+  const [cookies] = useCookies(['access_token_cookie', 'csrf_access_token']);
+  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [uploadedFiles, setUploadedFiles] = useState<{ name: string, size: number, success: boolean }[]>([]);
+  const size = 50;
+  let formData: FormData;
+  let gcsFileLocation = "";
+
+  async function handleFileUploadChange(event: any): Promise<void> {
+    const file = event.detail.value; // Assuming event contains file data here
+    if (!file) {
+      setErrorMessage("No file selected.");
+      return;
+    }
+
+    formData = new FormData();
+    formData.append('file', file);
+
+    console.log('Selected file:', file);
+
+    // Extract the GCS file location from props.links
+    props.links.forEach((item) => {
+      if (item.label === "GCS Location") {
+        gcsFileLocation = item.link;
+      }
+    });
+
+    const gcsLocation = gcsFileLocation.replace(
+      "https://console.cloud.google.com/storage/browser/",
+      "gs://"
+    );
+
+    const accessToken = localStorage.getItem('access_token');
+    const csrfToken = cookies.csrf_access_token;
+
+    const uploadConfig: AxiosRequestConfig = {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        "Authorization": `Bearer ${accessToken}`,
+        "X-CSRF-TOKEN": csrfToken
+      }
+    };
+
+    try {
+      console.log('Uploading files:', formData);
+
+      if (formData.has('file')) {
+        const response = await axios.post(
+          `${AppConfig.aoPortalApiUrl}/upload`,
+          formData,
+          uploadConfig
+        );
+
+        setUploadedFiles([...uploadedFiles, { name: file.name, size: file.size, success: true }]); // Add uploaded file info with success status
+        console.log('File successfully uploaded:', response.data);
+      } else {
+        setErrorMessage("No file selected.");
+      }
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      setUploadedFiles([...uploadedFiles, { name: file.name, size: file.size, success: false }]); // Mark as failed
+      setErrorMessage(`File upload failed: ${error.message}`);
+    }
+  }
+
+  return (
+    <WppTypography type="l-body">
+      {/* File upload title */}
+      <div style={{ marginBottom: '1rem' }}>
+        <h3>{props.title}</h3>
+        <ul>
+          {props.links.map((item, index) => (
+            <li key={index}>
+              {item.context}: <a href={item.link} target="_blank" rel="noopener noreferrer">{item.label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* File upload component */}
+      <WppFileUpload
+        style={{ marginBottom: '80rem' }}
+        acceptConfig={{
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx', '.xls'],
+          'application/pdf': ['.pdf'],
+          'text/csv': ['.csv'],
+          'application/x-spss': ['.sav'],
+          'application/json': ['.json'],
+        }}
+        onWppChange={handleFileUploadChange}
+        size={size}
+      />
+
+      {/* Uploaded files list with tick */}
+      {uploadedFiles.length > 0 && (
+        <div style={{ marginTop: '1rem' }}>
+          {uploadedFiles.map((file, index) => (
+            <div key={index} style={{ display: 'flex', alignItems: 'center' }}>
+              <span>{file.name} ({(file.size / 1024).toFixed(2)} KB)</span>
+              {file.success ? (
+                <span style={{ color: 'green', marginLeft: '1rem' }}>✔</span>
+              ) : (
+                <span style={{ color: 'red', marginLeft: '1rem' }}>✘</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Error message display */}
+      {errorMessage && (
+        <div style={{ color: 'red', marginBottom: '1rem' }}>
+          {errorMessage}
+        </div>
+      )}
+
+      {/* Checkbox component */}
+      <WppCheckbox
+        style={{ padding: '5px' }}
+        required={true}
+        checked={props.checked}
+        indeterminate={false}
+        labelConfig={{
+          text: props.checkboxText,
+        }}
+        onWppChange={(e: CustomEvent) => props.onChange(e.detail.checked)}
+      />
+    </WppTypography>
+  );
+};
